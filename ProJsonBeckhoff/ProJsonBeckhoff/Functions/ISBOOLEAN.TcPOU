@@ -1,0 +1,26 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="ISBOOLEAN" Id="{90377328-7a8b-4e27-a839-20f33a43f549}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION ISBOOLEAN : BOOL
+VAR_INPUT
+	In:		POINTER TO STRING(5);
+END_VAR
+VAR
+	TempVar:	STRING(5);
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(*=======================================================================================================
+ISBOOLEAN()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Oct 2, 2018
+check if a string would convert to a valid boolean variable
+========================================================================================================*)
+TempVar:= In^;
+StrToUpperA(pString:= ADR(TempVar));
+
+ISBOOLEAN:= (TempVar = 'TRUE') OR (TempVar = 'FALSE');]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

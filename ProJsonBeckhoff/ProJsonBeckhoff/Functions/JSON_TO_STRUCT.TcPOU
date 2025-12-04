@@ -1,0 +1,401 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="JSON_TO_STRUCT" Id="{5b8571f4-8b1f-4373-87b8-4083ca039653}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK JSON_TO_STRUCT
+VAR_INPUT
+	Execute:			BOOL;		//rising edge triggers parse of JSON string
+	Abort:				BOOL;		//rising edge stops parsing of JSON string
+	{attribute 'displaymode':='hex'}JSONString:		POINTER TO ARRAY[1..GPL_JSON.MAX_JSON_STRING] OF BYTE;	//pointer to JSON string
+	JSONStringSize:		UDINT;		//size of string
+	JSONVars:			POINTER TO ARRAY[1..GPL_JSON.MAX_VARS] OF JSONVAR;	//pointer to local structure made up of type JSONVAR
+	NumberOfVars:		UINT;		//number of variables in the local structure or array
+END_VAR
+
+VAR_OUTPUT
+	Busy:				BOOL;		//busy parsing a string
+	Done:				BOOL;		//successfully parsed the whole string with no errors
+	Aborted:			BOOL;		//parsing aborted by Abort input
+	Error:				BOOL;		//unexpected character detected, string not completely parsed
+	ErrorPosition:		UDINT;		//character position where the unexpected character was found
+	ParseTime:			TIME;		//time it took to parse the string
+END_VAR
+
+VAR
+	bufferposition:		UDINT;	//current position in the string
+	NameValue:			ARRAY[1..GPL_JSON.MAX_LEVELS] OF JSONNAMEVALUE;	//name:value pairs currently being worked on
+	obj_level:			UINT;	//number of nested objects
+	name_start:			UDINT;	//index of the beginning of a name
+	name_stop:			UDINT;	//index of the end of a name
+	value_start:		UDINT;	//index of the beginning of a value
+	value_stop:			UDINT;	//index of the end of a value
+	findname:			BOOL;	//look for name in configuration array
+	foundname:			BOOL;	//found a matching name in configuration array
+	i:					UDINT;	//loop indexes
+	jsonvarindex:		UINT;
+	levelindex:			UINT;
+	nameindex:			UINT;
+	names:				ARRAY[1..GPL_JSON.MAX_LEVELS] OF JSONVARNAME;	//temp variable--can't access an array property
+	thisloopstarttime:	TIME;		//time the current loop started
+	starttime:			TIME;		//time parsing started
+	Execute_TRIG:		R_TRIG;
+	Abort_TRIG:			R_TRIG;
+	findloop:			UINT;
+	parse:				BOOL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(*=======================================================================================================
+JSON_TO_STRUCT()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+parse JSON string and place the values in a matching local structure of type JSONVAR
+========================================================================================================*)
+thisloopstarttime:= TIME();	//store the time of the beginning of this loop	
+
+Execute_TRIG(CLK:= Execute);
+Abort_TRIG(CLK:= Abort);
+
+IF Execute_TRIG.Q THEN
+//must see a rising edge on execute to start parsing
+	starttime:= TIME();	//store the time of the beginning of execution
+	parse:= TRUE;
+	bufferposition:= 1;
+	Busy:= TRUE;
+	Aborted:= FALSE;
+	Done:= FALSE;
+	Error:= FALSE;
+	ErrorPosition:= 0;
+	obj_level:= 0;
+	FOR i:= 1 TO GPL_JSON.MAX_LEVELS DO
+		NameValue[i].Name:= '';
+		NameValue[i].Value:= '';
+		NameValue[i].IsArray:= FALSE;
+		NameValue[i].ArrayIndex:= 0;
+	END_FOR
+END_IF
+
+IF Abort_TRIG.Q THEN
+	Busy:= FALSE;
+	Aborted:= TRUE;
+	parse:= FALSE;
+END_IF
+
+(*====================PARSE JSON STRING====================*)
+//parse the input string, and start storing values in NameValue array
+WHILE parse DO
+	IF (JSONString^[bufferposition] = ASCII.NULL) OR (bufferposition > JSONStringSize) THEN
+	//strings are terminated with a null character
+	//there might not always be a null character, for example in a network buffer that is stored as an array of bytes
+		parse:= FALSE;
+		Done:= TRUE;
+		Busy:= FALSE;
+		ParseTime:= TIME() - starttime;
+		RETURN;
+	END_IF	
+
+	CASE JSONString^[bufferposition] OF 
+
+	ASCII.DOUBLE_QUOTE:	// " name string
+		Name();
+		
+	ASCII.OPEN_BRACE:// {, beginning of object
+		OpenObject();	
+		
+	ASCII.CLOSE_BRACE:// }, end of object
+		CloseObject();
+		
+	ASCII.OPEN_BRACKET:	// [, beginning of array
+		OpenArray();
+		
+	ASCII.CLOSE_BRACKET:	// ], end of array
+		CloseArray();
+		
+	ASCII.COLON:	// :, separator for name:value pairs
+		Value();
+		
+	ASCII.COMMA:	// , move to next object
+		ASCII.Comma();
+	
+	ASCII.SOH..ASCII.SPACE:	// skip all control characters, including spaces
+		bufferposition:= bufferposition + 1;
+
+	ELSE
+	//error, unexpected character
+		ErrorHandler();
+	END_CASE
+	
+	(*========================================LOOK FOR NAMES IN LOCAL VARIABLES========================================*)
+	IF findname THEN
+	//there is at least one valid name:value pair in the NameValue array--check for a match in the Config array, including nested objects
+		findname:= FALSE;
+		FOR findloop:= 1 TO NumberOfVars DO
+		(*loop through all configured objects and look for the name that is currently being worked on in the JSON string
+		Local JSON object should be as closely matched to the expected JSON string as possible, to decrease parsing speed.  
+		This function will eventually find all objects, but it will start looking after the previous found variable, as it 
+		is assumed that that's the most likely position for the next variable*)  
+			jsonvarindex:= (jsonvarindex MOD NumberOfVars) + 1;
+			names:= JSONVars^[jsonvarindex].Names;	//temporary variable
+			FOR nameindex:= 1 TO obj_level DO
+			//Match name and array index.  Array index will be 0 if the current name:value is not part of an array
+				IF (names[nameindex].Name = NameValue[obj_level-(nameindex-1)].Name AND (NameValue[obj_level-(nameindex-1)].ArrayIndex = names[nameindex].ArrayIndex)) THEN	
+					foundname:= TRUE;	//name in JSON string matches the local variable name
+				ELSE
+					foundname:= FALSE;	//name in JSON string does not match the local variable name, go to next name
+					EXIT;
+				END_IF
+			END_FOR
+			IF foundname THEN
+				EXIT;
+			END_IF
+		END_FOR
+	
+		(*====================FOUND NAME, WRITE LOCAL VAR====================*)
+		IF foundname THEN
+		//local var name matches with JSON string name
+			foundname:= FALSE;
+			JSONVars^[jsonvarindex].AsString:= NameValue[obj_level].Value;	
+		END_IF
+	END_IF
+
+	IF TIME() >= (thisloopstarttime + GPL_JSON.MAX_EXECUTION_TIME) THEN
+	//this function block won't take up more than GPL_JSON.MAX_EXECUTION_TIME on one scan
+	//very long strings or files could take too long to parse in one task cycle, and cause a watchdog exception
+		RETURN;
+	END_IF
+END_WHILE
+]]></ST>
+    </Implementation>
+    <Method Name="CloseArray" Id="{c7dde6af-eca7-405b-9f03-425c856c5069}">
+      <Declaration><![CDATA[METHOD CloseArray
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*=======================================================================================================
+CloseArray()
+end of an array
+	
+========================================================================================================*)
+
+NameValue[obj_level].IsArray:= FALSE;
+NameValue[obj_level].ArrayIndex:= 0;
+bufferposition:= bufferposition + 1;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="CloseObject" Id="{071719d7-d139-4998-8946-49ec2efab5cc}">
+      <Declaration><![CDATA[METHOD CloseObject
+VAR
+	shiftindex:			INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*=======================================================================================================
+CloseObject()
+end of an object, move down in the object hierarchy
+========================================================================================================*)
+
+NameValue[obj_level].Name:= '';
+NameValue[obj_level].Value:= '';
+NameValue[obj_level].IsArray:= FALSE;
+NameValue[obj_level].ArrayIndex:= 0;
+obj_level:= obj_level - 1;
+bufferposition:= bufferposition + 1;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Comma" Id="{a8ee1ab8-8f09-4dc7-ade7-050a6dc3b694}">
+      <Declaration><![CDATA[METHOD Comma
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*=======================================================================================================
+Comma()
+found a comma, parse an array value, or move on to the next object	
+========================================================================================================*)
+
+IF NameValue[obj_level].IsArray THEN
+//if this is an array at the current object level, increment the array index
+	NameValue[obj_level].ArrayIndex:= NameValue[obj_level].ArrayIndex + 1;
+	Value();
+ELSE
+	bufferposition:= bufferposition + 1;
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ErrorHandler" Id="{9b7fa032-edea-40b9-ad8c-6da6b0e05571}">
+      <Declaration><![CDATA[METHOD ErrorHandler
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*=======================================================================================================
+Error()
+Unexpected or invalid character found, end parsing
+
+========================================================================================================*)
+
+parse:= FALSE;
+Busy:= FALSE;
+Error:= TRUE;
+ErrorPosition:= bufferposition;	//return buffer position of unexpected character
+RETURN;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Name" Id="{6b648978-a81e-4408-b560-b93e70df243a}">
+      <Declaration><![CDATA[METHOD Name
+VAR
+	namestringok:		BOOL;
+	j:					UDINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*=======================================================================================================
+Name()
+found the first quote at the beginning of a name string,
+extract the name string and put it into the NameValue array
+========================================================================================================*)
+
+name_start:= bufferposition + 1;
+FOR j:= name_start TO (name_start+GPL_JSON.MAX_NAME_SIZE) DO
+	IF (JSONString^[j] = 16#22) THEN
+	//find the closing quote of a name string
+		name_stop:= j - 1;		//name ends at character before quote
+		bufferposition:= j + 1;	//next loop can start after the quote
+		namestringok:= TRUE;
+		EXIT;
+	END_IF
+END_FOR
+
+IF namestringok THEN
+	SysMemSet(
+		pDest:= ADR(NameValue[obj_level].Name), 
+		udiValue:= 0, 
+		udiCount:= SIZEOF(NameValue[obj_level].Name)
+	);
+	
+	SysMemCpy(
+		pDest:= ADR(NameValue[obj_level].Name), 
+		pSrc:= ADR(JSONString^[name_start]), 
+		udiCount:= (name_stop+1 - name_start)
+	);
+ELSE
+	ErrorHandler();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="OpenArray" Id="{5cdc5427-7b81-426c-b144-5a476973c298}">
+      <Declaration><![CDATA[METHOD OpenArray
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*=======================================================================================================
+OpenArray()
+found the beginning of an array, set array definition at this object level
+========================================================================================================*)
+
+NameValue[obj_level].IsArray:= TRUE;
+NameValue[obj_level].ArrayIndex:= 1;
+bufferposition:= bufferposition + 1;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="OpenObject" Id="{e92b7607-a23b-4704-98b9-d448691ee5c8}">
+      <Declaration><![CDATA[METHOD OpenObject
+VAR
+	shiftindex:			INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*=======================================================================================================
+OpenObject()
+found the beginning of a new object, increment the object level
+========================================================================================================*)
+
+obj_level:= obj_level + 1;	//move up a level in the object hierarchy
+bufferposition:= bufferposition + 1;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Value" Id="{7a948c84-6a70-45ee-9463-c358201c0286}">
+      <Declaration><![CDATA[METHOD Value
+VAR
+	valueloop:		UDINT;
+	lookforname:	BOOL;
+	j:				UDINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*=======================================================================================================
+Value()
+found a ":" character, possible next characters are any combination of the following:
+{ begin another object
+[ begin a new array
+" or a number or letter: value found
+after all { and [ are found, and if any were found, the next thing will be a name string
+loop through until a value is found, incrementing obj_level or array definitions as necessary
+========================================================================================================*)
+
+bufferposition:= bufferposition + 1;	//start searching after the ":" character
+FOR valueloop:= 1 TO 20 DO 
+//loop through the next 20 characters (maximum) looking for a value
+	CASE JSONString^[bufferposition] OF
+		
+	ASCII.OPEN_BRACE:// {, beginning of new object
+		OpenObject();	
+		lookforname:= TRUE;
+	
+	ASCII.OPEN_BRACKET:	// [, beginning of new array
+		OpenArray();
+		
+	ELSE
+		IF lookforname THEN
+		//a new object or array was found, and all nested objects have already been looped through, therefore this buffer position must start a new name
+		//there is no value here, so exit this loop, main loop should now continue at the name, and parse its name:value pair
+			EXIT;
+		END_IF
+		
+		IF (JSONString^[bufferposition] = ASCII.DOUBLE_QUOTE) THEN
+		//value starts with a quote character--quoted string
+			value_start:= bufferposition + 1;	//value follows : and "	
+		ELSE
+			value_start:= bufferposition;	//value immediately follows :
+		END_IF
+		FOR j:= value_start TO (value_start+GPL_JSON.MAX_VALUE_SIZE) DO
+			IF (JSONString^[j] = ASCII.DOUBLE_QUOTE)  THEN
+			//end of value is is found at the closing quote
+				value_stop:= j - 1;
+				bufferposition:= j + 1;	//main loop can resume at the next character after the quote
+				EXIT;
+			ELSIF (JSONString^[j] = ASCII.COMMA) OR (JSONString^[j] = ASCII.CLOSE_BRACE) OR (JSONString^[j] = ASCII.CLOSE_BRACKET) THEN
+			//end of value is is found at , or }, or ]
+				value_stop:= j - 1;
+				bufferposition:= j;	//main loop can resume at the next character after the value
+				EXIT;
+			END_IF
+			IF (j = (value_start+GPL_JSON.MAX_VALUE_SIZE)) THEN
+			//no closing quote was found after MAXVALUESIZE characters
+				ErrorHandler();
+			END_IF
+		END_FOR	
+		
+		//clear previous string
+		SysMemSet(
+			pDest:= ADR(NameValue[obj_level].Value), 
+			udiValue:= 0, 
+			udiCount:= SIZEOF(NameValue[obj_level].Value)
+		);
+		//copy buffer to temporary value (string type)
+		SysMemCpy(
+			pDest:= ADR(NameValue[obj_level].Value), 
+			pSrc:= ADR(JSONString^[value_start]), 
+			udiCount:= (value_stop+1) - value_start 
+		);	
+		findname:= TRUE;		//there is a name:value pair in the NameValue array, check for a match with a local variable
+		EXIT;
+	END_CASE
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

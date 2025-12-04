@@ -1,0 +1,79 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="SPLIT_VARNAME" Id="{b8615364-ac7a-4570-9d11-0b762aa2cbcc}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION SPLIT_VARNAME : UINT
+VAR_INPUT
+	VarNameArray: REFERENCE TO ARRAY [1..GPL_JSON.MAX_LEVELS] OF JSONVARNAME;
+	///input string
+	StringIn: STRING(GPL_JSON.MAX_VAR_NAME);
+END_VAR
+VAR CONSTANT
+	SPLIT_CHAR: STRING(1) := '.';
+END_VAR
+VAR
+	ArraySize: UINT := 1;
+	sShortString: STRING;
+	iSplitLocation: INT;
+	i: UINT;
+	TempArray: ARRAY[1..GPL_JSON.MAX_LEVELS] OF STRING;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(*=======================================================================================================
+SPLIT_VARNAME()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: June 26, 2018
+split a string into an array at the '.' character
+
+TO DO:
+'a.b.c.d' becomes an array[1]=d, [2]=c, [3]=b, [4]=a
+modified from https://forum.codesys.com/viewtopic.php?t=9889
+========================================================================================================*)
+
+//Loop through string until there is no string left or array has hit its limits
+WHILE (StrLenA(pstData:= ADR(StringIn)) > 0) DO
+	//Find location of first break point
+	iSplitLocation := StrFindA(pst1:= ADR(StringIn), pst2:= ADR(SPLIT_CHAR), uiSearchStart:= 1) - 1;
+	
+	//If there is no break point found then set location to size of string
+	IF (iSplitLocation = -1) THEN
+		iSplitLocation := DINT_TO_INT(StrLenA(pstData:= ADR(StringIn)));
+	END_IF
+  
+	//Copy the part of the string that is needed for the parameter.
+	StrMidA(
+			pst:= ADR(StringIn), 
+			uiInputBufferSize:= SIZEOF(StringIn), 
+			iLength:= iSplitLocation, 
+			iPosition:= 1, 
+			pstResult:= ADR(sShortString), 
+			uiResultBufferSize:= SIZEOF(sShortString));
+
+	//Make sure string is not empty before using up an array spot.
+	IF (StrLenA(pstData:= ADR(sShortString)) > 0) THEN
+		TempArray[ArraySize] := sShortString;
+		ArraySize := ArraySize + 1;
+	END_IF
+
+	//Remove copied components from long string
+	StrDeleteA(pby:= ADR(StringIn), iLength:= (iSplitLocation + LEN(SPLIT_CHAR)), iPosition:= 1);
+
+	//Check to see if more parameters can fit in array. If not exit loop
+	IF (ArraySize > GPL_JSON.MAX_LEVELS) THEN
+		EXIT;
+	END_IF 
+END_WHILE
+
+ArraySize:= ArraySize - 1;
+
+FOR i:= 0 TO ArraySize DO
+//reverse the order of the array
+	VarNameArray[i+1].Name:= TempArray[ArraySize-i];	
+END_FOR
+
+SPLIT_VARNAME:= ArraySize;
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

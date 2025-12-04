@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="EXAMPLEJSONSTRUCT_1" Id="{9661de30-8290-460f-8ef8-838891e45f0e}">
+    <Declaration><![CDATA[TYPE EXAMPLEJSONSTRUCT_1 :
+STRUCT
+	var4: JSONVAR;
+	var5: JSONVAR;
+	var6: JSONVAR;
+	var7: ARRAY[1..3] OF JSONVAR;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

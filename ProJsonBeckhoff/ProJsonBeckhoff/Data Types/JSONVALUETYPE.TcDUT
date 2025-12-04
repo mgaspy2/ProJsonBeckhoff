@@ -1,0 +1,24 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="JSONVALUETYPE" Id="{ddaac08b-8e5d-4689-b6e8-a932760af8de}">
+    <Declaration><![CDATA[TYPE JSONVALUETYPE :
+(
+	///local var is type STRING
+	json_string,
+	///local var is REAL
+	json_number,
+	///local var is DINT
+	json_integer,
+	///local var is BOOL
+	json_boolean,
+	///local var is type null
+	json_null,
+	///object is an array
+	json_array,
+	///object is another object (nested objects)
+	json_object
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

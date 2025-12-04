@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="JSONNAMEVALUE" Id="{73ef8e14-ae12-4982-ae2b-34d622e350ef}">
+    <Declaration><![CDATA[TYPE JSONNAMEVALUE :
+STRUCT
+	///name of the object at this level
+	Name: STRING;
+	///value of the object at this level
+	Value: STRING;
+	///array index of the object at this level
+	ArrayIndex: UINT;
+	IsArray: BOOL;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

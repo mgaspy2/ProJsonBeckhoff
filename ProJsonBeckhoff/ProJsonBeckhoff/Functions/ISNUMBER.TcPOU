@@ -1,0 +1,56 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="ISNUMBER" Id="{fb4e981e-913e-4c54-86ba-0b337fdefbe9}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION ISNUMBER : BOOL
+VAR_INPUT
+	In:		POINTER TO ARRAY[1..255] OF BYTE;
+END_VAR
+VAR
+	i:				UINT;
+	founddecimal:	BOOL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(*=======================================================================================================
+ISINTEGER()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Oct 2, 2018
+check if a string contains a valid number, allows for "-" at the beginning of the string, and one "." character
+========================================================================================================*)
+
+FOR i:= 1 TO 256 DO
+	CASE In^[i] OF 	
+	ASCII.NULL:
+	//end of string
+		EXIT;
+	ASCII.MINUS:
+	//only allow a "-" in the first position	
+		IF (i=1) THEN
+			ISNUMBER:= TRUE;
+		ELSE
+			ISNUMBER:= FALSE;
+			EXIT;
+		END_IF
+	ASCII.DOT:
+	//only allow one decimal point
+		IF founddecimal THEN
+		//already found one decimal, can't have two
+			ISNUMBER:= FALSE;
+			EXIT;
+		ELSE
+		//first decimal point found, allow one
+			ISNUMBER:= TRUE;
+			founddecimal:= TRUE;
+		END_IF
+	ASCII.NUMBER_0..ASCII.NUMBER_9:
+		ISNUMBER:= TRUE;
+	ELSE
+	//all other characters are not part of numbers
+		ISNUMBER:= FALSE;
+		EXIT;
+	END_CASE
+END_FOR]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

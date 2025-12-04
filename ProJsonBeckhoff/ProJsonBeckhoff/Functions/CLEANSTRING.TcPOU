@@ -1,0 +1,47 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="CLEANSTRING" Id="{8b1bb950-04cd-4621-b2b7-79cea40325af}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION CLEANSTRING : BOOL
+VAR_INPUT
+	StringPtr:		POINTER TO ARRAY[1..MAXSTRINGLENGTH] OF BYTE;
+END_VAR
+VAR CONSTANT
+	MAXSTRINGLENGTH:	UINT:= 2048;
+END_VAR
+VAR
+	i:				UINT;
+	j:				UINT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(*=======================================================================================================
+CLEANSTRING()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Oct 9, 2018
+strip all control characters and spaces from a string
+========================================================================================================*)
+
+FOR i:= 1 TO MAXSTRINGLENGTH DO
+	IF (StringPtr^[i] >= 1) AND (StringPtr^[i] <= 16#20) THEN
+	//match all control and white space characters, except for null, which terminates a string
+		FOR j:= i TO MAXSTRINGLENGTH DO
+			IF (StringPtr^[j] = 16#00) THEN
+			//null character terminates string
+				EXIT;
+			ELSE
+			//shift character array left one
+				StringPtr^[j]:= StringPtr^[j+1];
+			END_IF
+		END_FOR
+		i:= i - 1;	//run loop at same position again
+	ELSIF (StringPtr^[i] = 16#00) THEN
+	//found null character at the end of the string
+		EXIT;
+	END_IF
+END_FOR
+
+CLEANSTRING:= TRUE;]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="REAL_TO_STRING_X" Id="{dc90bb3f-8124-4ecb-a864-0290693cfeee}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION REAL_TO_STRING_X : STRING
+VAR_INPUT
+	In_REAL: REAL;
+END_VAR
+VAR
+	TempVar: STRING;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(*=======================================================================================================
+REAL_TO_STRING_X()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+Standard REAL_TO_STRING function will always add a decimal place even if the input is a whole number
+this function will drop the ".0" on the string output
+========================================================================================================*)
+
+TempVar:= REAL_TO_STRING(In_REAL);
+IF (RIGHT(STR:= TempVar, SIZE:= 2) = '.0') THEN
+	REAL_TO_STRING_X:= DELETE(STR:= TempVar, LEN:= 2, POS:= LEN(TempVar) - 1);
+ELSE
+	REAL_TO_STRING_X:= TempVar;
+END_IF]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

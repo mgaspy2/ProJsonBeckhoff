@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="Notes" Id="{690ea4a5-7b12-44e1-9669-7d6d6cad2cdd}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM Notes
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(*=======================================================================================================
+Notes
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+current version 1.0.0.2
+Last updated: March 6, 2019
+
+BUGS
+-STRUCT_TO_JSON/JSONVAR.FB_Init()
+	-doesn't add the closing ] if it's the last item in the structure
+	-doesn't add the closing } if a nested object is the last item in the structure
+	-both of the above for the same reason--closing objects is done by the following object, see JSONVAR.FB_Init() line 70-115
+	-what about setting EndObject to TRUE by default, and having the following object set it to FALSE if not a new object?
+-all arrays must be 1 based, haven't investigated further with 0 based arrays
+-STRUCT_TO_JSON 
+	-Format input is partially implemented, needs more testing with various different strings and structures
+	-should use spaces for indentation rather than tabs?
+-JSON_TO_STRUCT.Value()
+	-line 36: what happens if a value string is longer than MAX_VALUE_SIZE?
+
+	
+	
+NEW IDEAS
+-STRUCT_TO_JSON	
+	-create variable length arrays on the JSON side if values are null?
+-speed up
+-JSON_STRINGIFY function that can be called multiple times to create a JSON string from key and value string inputs
+	-would create JSON on the fly without having to define a JSONVAR structure
+	-could be useful for small strings, HTTP server responses, etc
+-Schneider SoMachine does not support the __NEW operator, but eventually this would be a better way to implement JSON_TO_STRUCT
+
+
+VERSION HISTORY
+-should start making better notes on version history
+
+
+
+
+
+
+
+
+========================================================================================================*)]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

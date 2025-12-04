@@ -1,0 +1,732 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="JSONVAR" Id="{4950d3a3-1126-4604-a018-673c50104134}" SpecialFunc="None">
+    <Declaration><![CDATA[{attribute 'pack_mode' := '4'}
+{attribute 'reflection' := ''}
+{attribute 'symbol' := 'none'}
+FUNCTION_BLOCK JSONVAR
+VAR_OUTPUT
+	///properties can't be linked to visualizations, so this output var is updated every time AsString property is set
+	{attribute 'symbol' := 'read'}
+	HMIVarAsString: STRING(GPL_JSON.MAX_VALUE_SIZE);
+END_VAR
+VAR_STAT
+	///highest variable name in previous variable
+	{attribute 'hide'}
+	PrevParentVar: REFERENCE TO INT;
+	///path of the previous variable
+	{attribute 'hide'}
+	PrevNameArray: REFERENCE TO ARRAY [1..GPL_JSON.MAX_LEVELS] OF JSONVARNAME;
+END_VAR
+VAR
+	///JSON name uses the variable name
+	{attribute 'instance-path' := ''}
+	{attribute 'noinit'}
+	_VarNameFull: STRING(GPL_JSON.MAX_VAR_NAME);
+	///variable path as an array. [1] is variable name, [2..x] are higher level structures
+	_VarNameArray: ARRAY[1..GPL_JSON.MAX_LEVELS] OF JSONVARNAME;
+	///type of variable contained in the value field, also implicity defines size of local var
+	{attribute 'hide'}
+	_ValueType: JSONVALUETYPE := JSONVALUETYPE.json_null;
+	///value stored internally as an array of bytes
+	{attribute 'hide'}
+	_InternalValue: ARRAY[1..(GPL_JSON.MAX_VALUE_SIZE + 1)] OF BYTE;
+	///size of internal value in bytes, automatically determined when any of the type properties are set
+	{attribute 'hide'}
+	_Size: UINT;
+	///array position which points to the highest variable name
+	{attribute 'hide'}
+	_ParentVar: INT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(*=======================================================================================================
+JSONVAR()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+local JSON variables
+
+for use with JSON_TO_STRUCT, STRUCT_TO_JSON
+variable type and size are automatically determined when a value is set, either:
+	-with the set accessor of the AsString Property, which will make a guess at the type, based on the value
+	-with any of the set accessors of the CharString, Boolean, Integer, Number, or Null properties
+variable name is set automatically in FB_Init
+	-variable name is the JSON name
+	-JSON allows some object names that are not valid variable names in IEC61131, for example "type", 
+	"3h", etc.  Workaround is to put an underscore at the beginning of the variable name.  This will
+	match in JSON_TO_STRUCT, and STRUCT_TO_JSON will create a name without the leading underscore
+========================================================================================================*)]]></ST>
+    </Implementation>
+    <Property Name="AsString" Id="{997d7655-5a87-4752-b5f2-fe16837fd92d}">
+      <Declaration><![CDATA[{attribute 'monitoring' := 'call'}
+PROPERTY AsString : STRING(GPL_JSON.MAX_VALUE_SIZE)
+]]></Declaration>
+      <Get Name="Get" Id="{f4ccb64f-3fc0-4721-ac35-1f64c5feafac}">
+        <Declaration><![CDATA[]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.AsString.Get()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+
+get the variable value as a string
+========================================================================================================*)
+
+CASE _ValueType OF
+JSONVALUETYPE.json_null:
+	AsString:= 'null';
+JSONVALUETYPE.json_boolean:
+	IF THIS^.Boolean THEN
+		AsString:= 'true';
+	ELSE
+		AsString:= 'false';
+	END_IF
+JSONVALUETYPE.json_number:
+	AsString:= REAL_TO_STRING_X(THIS^.Number);
+JSONVALUETYPE.json_integer:
+	AsString:= DINT_TO_STRING(THIS^.Integer);
+JSONVALUETYPE.json_string:
+	AsString:= THIS^.CharString;
+END_CASE
+]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{9361b837-3cd3-46d2-8542-6c489c00a744}">
+        <Declaration><![CDATA[VAR
+	TempBool: BOOL;
+	TempReal: REAL;
+	TempInt: DINT;
+	TempString: STRING(255);
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.AsString.Set()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+
+set the variable value as a string
+========================================================================================================*)
+
+IF (_ValueType = JSONVALUETYPE.json_null) THEN
+//if the type is not explicitly configured, make a guess at the type
+	IF ISNUMBER(ADR(AsString)) THEN
+		_ValueType:= JSONVALUETYPE.json_number;
+	ELSIF ISBOOLEAN(ADR(AsString)) THEN
+		_ValueType:= JSONVALUETYPE.json_boolean;
+	ELSIF (AsString = null) THEN
+		_ValueType:= JSONVALUETYPE.json_null;
+	ELSE
+		_ValueType:= JSONVALUETYPE.json_string;
+	END_IF
+END_IF
+
+CASE _ValueType OF
+JSONVALUETYPE.json_null:
+	THIS^.Null:= 'null';
+JSONVALUETYPE.json_boolean:
+	StrToUpperA(pString:= ADR(AsString));
+	IF (AsString = 'TRUE') THEN
+		TempBool:= TRUE;
+	ELSE
+		TempBool:= FALSE;
+	END_IF
+	THIS^.Boolean:= TempBool;
+JSONVALUETYPE.json_number:
+	TempReal:= STRING_TO_REAL(AsString);
+	THIS^.Number:= TempReal;
+JSONVALUETYPE.json_string:
+	THIS^.CharString:= AsString;
+END_CASE
+
+HMIVarAsString:= AsString;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="Boolean" Id="{60481126-5f00-4c4d-9b5e-09ebe7746e54}">
+      <Declaration><![CDATA[PROPERTY Boolean : BOOL
+]]></Declaration>
+      <Get Name="Get" Id="{4dfc73fe-eafe-4ce2-9891-bf00d40b95b9}">
+        <Declaration><![CDATA[]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.Boolean.Get()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+
+get a a boolean variable from the internal value
+========================================================================================================*)
+
+Boolean:= BYTE_TO_BOOL(_InternalValue[1]);]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{a7d3bc5f-620f-4757-bbe2-2a54e09b3962}">
+        <Declaration><![CDATA[]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.Boolean.set()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+
+this is a boolean variable, copy to internal value and set type and size
+========================================================================================================*)
+
+
+_ValueType:= JSONVALUETYPE.json_boolean;
+_Size:= 1;
+
+//clear memory
+SysMemSet(
+	pDest:= ADR(_InternalValue), 
+	udiValue:= 0, 
+	udiCount:= SIZEOF(_InternalValue)
+);
+
+//put data into internal value
+SysMemCpy(
+	pDest:= ADR(_InternalValue), 
+	pSrc:= ADR(Boolean), 
+	udiCount:= _Size
+);	
+]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="CharString" Id="{68b18ecc-de27-49e7-b927-6f6e186461b3}">
+      <Declaration><![CDATA[PROPERTY CharString : STRING(GPL_JSON.MAX_VALUE_SIZE)
+]]></Declaration>
+      <Get Name="Get" Id="{a3a3b9a9-bafa-4f8c-bfd6-5e3a838c03cf}">
+        <Declaration><![CDATA[VAR
+	TempVar: STRING(255);
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.CharString.Get()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+
+get a string variable from the internal value
+========================================================================================================*)
+
+SysMemCpy(
+	pDest:= ADR(TempVar), 
+	pSrc:= ADR(_InternalValue), 
+	udiCount:= _Size+1
+);
+CharString:= TempVar;
+]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{e0a3ccf1-b108-4855-b7ac-2ca5e98c73d9}">
+        <Declaration><![CDATA[]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.CharString.Set()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+
+this is a string variable, copy to internal value and set type and size
+========================================================================================================*)
+
+_ValueType:= JSONVALUETYPE.json_string;
+_Size:= INT_TO_UINT(LEN(CharString));
+
+//clear memory
+SysMemSet(
+	pDest:= ADR(_InternalValue), 
+	udiValue:= 0, 
+	udiCount:= SIZEOF(_InternalValue)
+);
+
+//put data into internal value
+SysMemCpy(
+	pDest:= ADR(_InternalValue), 
+	pSrc:= ADR(CharString), 
+	udiCount:= _Size+1
+);]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="FB_Init" Id="{0809775b-3a05-48c0-95f2-8bb343b9ab9d}">
+      <Declaration><![CDATA[METHOD FB_Init : BOOL
+VAR_INPUT
+	/// TRUE: the retain variables are initialized (reset warm / reset cold)
+	bInitRetains: BOOL;
+	/// TRUE: the instance will be copied to the copy code afterward (online change)
+	bInCopyCode: BOOL;
+END_VAR
+VAR
+	ArrayPosition: UINT := GPL_JSON.MAX_LEVELS;
+	NameStringPtr: POINTER TO ARRAY[1..GPL_JSON.MAX_VAR_NAME] OF BYTE;
+	StringIndex: INT;
+	VarNameBegin: INT;
+	VarNameEnd: INT;
+	VarNameIndex: INT;
+	offset: INT;
+	startarraystr: INT;
+	endarraystr: INT;
+	varlevelindex: INT;
+	prevvarlevelindex: INT;
+	stoploop: INT;
+	startloop: INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*=======================================================================================================
+JSONVAR.FB_Init()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+split the variable path into an array, and determine some object characteristics
+example variable path: 'Test_M241.Test_M241.Application.TestJSON_PRG.TestStruct.var1'
+
+TO DO:  objects and arrays should automatically close, as it is possible that this variable is the last one
+the following variable should close an array or object through PrevNameArray
+
+========================================================================================================*)
+
+//====================GET VARIABLE NAME INTO AN ARRAY====================
+NameStringPtr:= ADR(_VarNameFull);
+StringIndex:= LEN(_VarNameFull);
+VarNameEnd:= StringIndex;
+VarNameIndex:= 1;
+
+
+
+
+//TO DO:  use SPLIT function to create an array first, then loop through the array
+
+WHILE (StringIndex > 0) DO
+	IF (NameStringPtr^[StringIndex] = ASCII.DOT) THEN
+	//found a "." character
+		VarNameBegin:= StringIndex + 1;
+		
+		//clear array string  TO DO:  IS THIS NECESSARY?
+		Sysmem.SysMemSet(
+			pDest:= ADR(_VarNameArray[VarNameIndex]), 
+			udiValue:= 0, 
+			udiCount:= GPL_JSON.MAX_NAME_SIZE
+		);
+	
+		//copy string between VarNameBegin and VarNameEnd
+		SysMem.SysMemCpy(
+			pDest:= ADR(_VarNameArray[VarNameIndex]), 
+			pSrc:= ADR(NameStringPtr^[VarNameBegin]), 
+			udiCount:= INT_TO_UDINT((VarNameEnd - VarNameBegin)+1)
+		);
+		
+		//remove leading _ from the name, if present
+		IF FIND(STR1:= _VarNameArray[VarNameIndex].Name, STR2:= '_') = 1 THEN
+			_VarNameArray[VarNameIndex].Name:= RIGHT(STR:= _VarNameArray[VarNameIndex].Name, SIZE:= LEN(_VarNameArray[VarNameIndex].Name) - 1);
+		END_IF
+		
+		//check if this is an array, if yes then remove the array index from the variable name
+		startarraystr:= FIND(STR1:= _VarNameArray[VarNameIndex].Name, STR2:= '[');
+		endarraystr:= FIND(STR1:= _VarNameArray[VarNameIndex].Name, STR2:= ']');
+		IF (startarraystr <> 0) AND (endarraystr <> 0) THEN
+			_VarNameArray[VarNameIndex].ArrayIndex:= STRING_TO_UINT(MID(
+				STR:= _VarNameArray[VarNameIndex].Name, 
+				LEN:= endarraystr-startarraystr-1, 
+				POS:= startarraystr+1
+			));
+			_VarNameArray[VarNameIndex].Name:= Standard.DELETE(
+				STR:= _VarNameArray[VarNameIndex].Name, 
+				LEN:= endarraystr-startarraystr+1, 
+				POS:= startarraystr
+			);
+		END_IF
+		
+		IF (_VarNameArray[VarNameIndex].Name = 'Application') THEN
+		//was this the application level?	
+		//highest variable name is always two less than the Application index	
+			_ParentVar:= VarNameIndex - 2;
+			EXIT;
+		END_IF
+	
+		VarNameIndex:= VarNameIndex + 1;
+		VarNameEnd:= VarNameBegin - 2;	//end of the next variable name is known, store for next loop			
+		StringIndex:= VarNameBegin - 2;
+	ELSE
+		StringIndex:= StringIndex - 1;
+	END_IF
+END_WHILE
+
+//====================JSON OBJECT CHARACTERISTICS====================
+//figure out whether this variable is the first value of a new JSON object, or if the previous variable is the last value of a JSON object
+IF __ISVALIDREF(PrevNameArray) THEN
+//check for valid reference--will be invalid when FB_Init is run on the first instance of JSONVAR
+	offset:= _ParentVar - PrevParentVar;	//check if the variable names have shifted up or down
+	IF (offset < 0) THEN
+	//objects shifted down
+		stoploop:= PrevParentVar - 1;
+		startloop:= 1;
+	ELSE
+	//no shift, or shift up
+		stoploop:= _ParentVar - 1;
+		startloop:= offset + 1;
+	END_IF
+	FOR varlevelindex:= startloop TO stoploop DO
+		prevvarlevelindex:= varlevelindex - offset;
+		IF (offset < 0) AND (varlevelindex = 1) THEN
+		//if objects have shifted down, then i-offset will never point to PrevNameArray[1]
+		//the previous variable might need an array closed
+			IF (PrevNameArray[1].ArrayIndex > 0) THEN
+			//end array
+				PrevNameArray[1].EndArray:= TRUE;
+			END_IF	
+		END_IF
+		
+		IF ((varlevelindex-offset) > 1) AND ((_VarNameArray[varlevelindex].Name <> PrevNameArray[prevvarlevelindex].Name) OR (_VarNameArray[varlevelindex].ArrayIndex <> PrevNameArray[prevvarlevelindex].ArrayIndex)) THEN
+		//end previous object
+			PrevNameArray[prevvarlevelindex].EndObject:= TRUE;	//close previous object	
+		END_IF	
+		
+		IF (PrevNameArray[prevvarlevelindex].ArrayIndex > 0) AND (_VarNameArray[varlevelindex].Name <> PrevNameArray[prevvarlevelindex].Name) THEN
+		//end array
+			PrevNameArray[prevvarlevelindex].EndArray:= TRUE;
+		END_IF		
+	
+		IF (_VarNameArray[varlevelindex].ArrayIndex = 1) AND (PrevNameArray[prevvarlevelindex].ArrayIndex = 0) THEN
+		//new array
+			_VarNameArray[varlevelindex].NewArray:= TRUE;				
+		END_IF	
+	
+		IF (varlevelindex > 1) AND ((NOT _VarNameArray[varlevelindex].NewArray) AND (_VarNameArray[varlevelindex].Name <> PrevNameArray[prevvarlevelindex].Name) OR (_VarNameArray[varlevelindex].ArrayIndex <> PrevNameArray[prevvarlevelindex].ArrayIndex)) THEN
+		//new object
+			_VarNameArray[varlevelindex].NewObject:= TRUE;	//new object at this level	
+		END_IF	
+	END_FOR
+
+ELSE
+//invalid reference to PrevNameArray, this must be the first variable
+	FOR varlevelindex:= 1 TO _ParentVar-1 DO
+		IF (varlevelindex > 1) THEN
+		//every level above 1 will be a new object
+			_VarNameArray[varlevelindex].NewObject:= TRUE;
+		END_IF
+		IF (_VarNameArray[varlevelindex].ArrayIndex = 1) THEN
+		//new array
+			_VarNameArray[varlevelindex].NewArray:= TRUE;				
+		END_IF			
+	END_FOR
+END_IF
+
+//set a reference to some variables for the next JSON variable
+PrevNameArray REF= _VarNameArray;
+PrevParentVar REF= _ParentVar;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Integer" Id="{12a641fb-0425-4770-afbc-0c82c8d956b0}">
+      <Declaration><![CDATA[PROPERTY Integer : DINT
+]]></Declaration>
+      <Get Name="Get" Id="{0fc95dc0-a0d9-4774-8501-3986aaae6875}">
+        <Declaration><![CDATA[VAR
+	TempVar: REAL;
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.Integer.Get()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+
+get an integer variable from the internal value
+all number types are stored internally as floating point
+========================================================================================================*)
+
+SysMemCpy(
+	pDest:= ADR(TempVar), 
+	pSrc:= ADR(_InternalValue), 
+	udiCount:= 4
+);
+
+Integer:= REAL_TO_DINT(TempVar);]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{ae0704b5-2d3d-4dd5-a47c-932239f636a2}">
+        <Declaration><![CDATA[VAR
+	TempVar: REAL;
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.Integer.Set()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+
+this is a integer variable, copy to internal value and set type and size
+all number types are stored internally as floating point
+========================================================================================================*)
+
+_ValueType:= JSONVALUETYPE.json_integer;
+_Size:= 4;
+
+//clear memory
+SysMemSet(
+	pDest:= ADR(_InternalValue), 
+	udiValue:= 0, 
+	udiCount:= SIZEOF(_InternalValue)
+);
+
+TempVar:= DINT_TO_REAL(Integer);
+
+//put data into internal value
+SysMemCpy(
+	pDest:= ADR(_InternalValue), 
+	pSrc:= ADR(TempVar), 
+	udiCount:= _Size
+);	]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="Names" Id="{cc1e3dbe-9e19-4c0d-8b99-17d0034fbb2b}">
+      <Declaration><![CDATA[PROPERTY Names : ARRAY[1..GPL_JSON.MAX_LEVELS] OF JSONVARNAME
+]]></Declaration>
+      <Get Name="Get" Id="{acdf8b18-5bdb-4cb1-8813-06520c1b0cb7}">
+        <Declaration><![CDATA[]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Names:= _VarNameArray;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="Null" Id="{3aac5ee4-7f3b-472a-bc4a-aef13b81a550}">
+      <Declaration><![CDATA[PROPERTY Null : STRING(4)
+]]></Declaration>
+      <Get Name="Get" Id="{85caeaed-26aa-4428-b0f5-02d420a0d70e}">
+        <Declaration><![CDATA[]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.Null.Get()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+
+get a null value (returned as a string, as IEC61131 has no way to represent a null value)
+========================================================================================================*)
+
+Null:= 'null';]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{6dae1456-0ee2-430a-b8ef-d8735c857d8a}">
+        <Declaration><![CDATA[]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.Null.Set()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+
+this is a null variable, set type and size
+========================================================================================================*)
+
+_ValueType:= JSONVALUETYPE.json_null;
+_Size:= 4;
+
+]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="Number" Id="{f63f6f2d-faef-4a09-91f7-27ae3a3b09f7}">
+      <Declaration><![CDATA[PROPERTY Number : REAL
+]]></Declaration>
+      <Get Name="Get" Id="{8a1b7574-0bfe-4db1-bf25-77dd4739df32}">
+        <Declaration><![CDATA[VAR
+	TempVar: REAL;
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.Number.Get()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+
+get a floating point variable from the internal value
+========================================================================================================*)
+
+SysMemCpy(
+	pDest:= ADR(TempVar), 
+	pSrc:= ADR(_InternalValue), 
+	udiCount:= 4
+);
+Number:= TempVar;
+
+]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{5c76cbf0-db62-448b-b846-c97ca28e74dc}">
+        <Declaration><![CDATA[]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.Number.Set()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+
+this is a floating point variable, copy to internal value and set type and size
+========================================================================================================*)
+
+_ValueType:= JSONVALUETYPE.json_number;
+_Size:= 4;
+
+//clear memory
+SysMemSet(
+	pDest:= ADR(_InternalValue), 
+	udiValue:= 0, 
+	udiCount:= SIZEOF(_InternalValue)
+);
+
+//put data into internal value
+SysMemCpy(
+	pDest:= ADR(_InternalValue), 
+	pSrc:= ADR(Number), 
+	udiCount:= _Size
+);	
+]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="ParentVar" Id="{87a02adc-1ab6-46d0-b021-b03c5dd53ea7}">
+      <Declaration><![CDATA[PROPERTY ParentVar : INT
+]]></Declaration>
+      <Get Name="Get" Id="{8b477738-f58e-44c3-b98e-4db9b8fc01f1}">
+        <Declaration><![CDATA[]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.ParentVar.Get()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+
+array position which points to the highest variable name
+========================================================================================================*)
+
+ParentVar:= _ParentVar;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="Size" Id="{92ba46a9-aa8a-4bd1-863e-04e84f50d51b}">
+      <Declaration><![CDATA[{attribute 'monitoring' := 'call'}
+PROPERTY Size : UINT
+]]></Declaration>
+      <Get Name="Get" Id="{b195a638-61ed-472e-8892-073ea767167c}">
+        <Declaration><![CDATA[]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.Size.Get()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+
+//size of internal value in bytes, automatically determined when any of the type properties are set
+========================================================================================================*)
+
+Size:= _Size;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="ValueType" Id="{53c6da5d-4d33-41aa-b79b-a0d1690b842d}">
+      <Declaration><![CDATA[{attribute 'monitoring' := 'call'}
+PROPERTY ValueType : JSONVALUETYPE
+]]></Declaration>
+      <Get Name="Get" Id="{8a9f1cec-31d1-45a9-8162-4bd71e070f37}">
+        <Declaration><![CDATA[]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.ValueType.Get()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+
+type of variable contained in the value field, also implicity defines size of local var
+========================================================================================================*)
+
+ValueType:= _ValueType;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="VarName" Id="{014f379a-6c51-488a-b002-e710557dc99e}">
+      <Declaration><![CDATA[PROPERTY VarName : STRING(GPL_JSON.MAX_NAME_SIZE)
+]]></Declaration>
+      <Get Name="Get" Id="{5d33aa35-c013-400a-86bd-e92beb7043ad}">
+        <Declaration><![CDATA[]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.VarName.Get()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Sept 16, 2019
+
+get the name of the variable as a string, ie.
+'Test_M241.Test_M241.Application.TestJSON_PRG.TestStruct.var1'
+
+========================================================================================================*)
+
+VarName:= _VarNameFull;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{6f42f4f7-8beb-4024-a36a-07af6405aa13}">
+        <Declaration><![CDATA[VAR
+	Levels: UINT;
+	i: INT;
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(*=======================================================================================================
+JSONVAR.SetVarName()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Sept 16, 2019
+
+Manually set JSON variable name to something other than it's automatically generated name.  This should only 
+be used when the JSON string could have a changing variable name at runtime, ie. the variable name is a date 
+or a counter.  Normally, the JSON variable name is the same as the PLC variable name
+NOTE:  this cannot change the number of levels of a nested object, it is assumed that the basic structure
+remains the same, and only the names are changing
+
+example created by FB_Init:
+_VarNameFull   'Test_M241.Application.TestJSON_PRG.TestStruct.var1'
+_VarNameArray                 [4]        [3]          [2]     [1]
+_ParentVar = 2
+
+example after runtime changes
+_VarNameFull   'TestStruct.var1'
+_VarNameArray      [2]     [1]
+_ParentVar = 2
+
+set as a string ie. 'TestStruct.var1'
+each object inside another object must be changed manually
+higher level object names must be changed in each lower level object
+program level and above are not manually adjustable at runtime ie. 'Test_M241.Application.TestJSON_PRG.'
+
+========================================================================================================*)
+
+Levels:= SPLIT_VARNAME(VarNameArray:= _VarNameArray, StringIn:= VarName);
+
+FOR i:= UINT_TO_INT(Levels) TO 1 BY -1 DO 
+//recreate the var name string
+	IF (i=UINT_TO_INT(Levels)) THEN
+		_VarNameFull:= CONCAT(_VarNameArray[i].Name,'.');
+	ELSIF (i=1) THEN
+		_VarNameFull:= CONCAT(_VarNameFull, _VarNameArray[i].Name);
+	ELSE
+		_VarNameFull:= CONCAT(_VarNameFull, _VarNameArray[i].Name);
+		_VarNameFull:= CONCAT(_VarNameFull, '.');
+	END_IF
+END_FOR]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+  </POU>
+</TcPlcObject>

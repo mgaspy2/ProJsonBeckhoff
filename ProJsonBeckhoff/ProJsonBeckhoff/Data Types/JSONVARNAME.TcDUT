@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="JSONVARNAME" Id="{3969d50d-a2cc-4e7c-bd0c-d150f8d9ff55}">
+    <Declaration><![CDATA[TYPE JSONVARNAME :
+STRUCT
+	///name of this variable or object
+	Name: STRING(GPL_JSON.MAX_NAME_SIZE);
+	///array index of the object at this level
+	ArrayIndex: UINT;
+	///first variable of a new object
+	NewObject: BOOL;
+	///last variable of an object
+	EndObject: BOOL;
+	///first variable of a new array
+	NewArray: BOOL;
+	///last variable of an array
+	EndArray: BOOL;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

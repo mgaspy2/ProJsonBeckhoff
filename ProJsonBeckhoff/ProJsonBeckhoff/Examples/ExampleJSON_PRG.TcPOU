@@ -1,0 +1,91 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="ExampleJSON_PRG" Id="{7b394f1d-11bd-4c11-9016-d8aafd94801c}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM ExampleJSON_PRG
+VAR
+	LocalJSONObj: EXAMPLEJSONSTRUCT;
+	ComposeJSON: STRUCT_TO_JSON;
+	JSONString: STRING(1000);
+	NewJSONObj: EXAMPLEJSONSTRUCT;
+	ParseJSON: JSON_TO_STRUCT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(*=======================================================================================================
+ExampleJSON_PRG()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+example program demonstrating JSONVAR, STRUCT_TO_JSON, AND JSON_TO_STRUCT
+
+This example will populate a structure with values and types.  On a rising edge of ComposeJSON.Execute, 
+ComposeJSON will create a JSON string.  When ComposeJSON.Done is set, ParseJSON.Execute is set, and 
+ParseJSON will parse that string back into a different structure.
+
+Tested with 200mS cyclic task, GPL_JSON.MAX_EXECUTION_TIME=50mS
+Depending on the application and speed of the controller, these values could be changed. 
+Be aware of how much cycle time is being taken when using multiple function blocks.
+Each function block will limit its time to GPL_JSON.MAX_EXECUTION_TIME, but multiple function blocks 
+could take up more than that.  This is on the list of things that could be improved. 
+
+JSONVAR
+FB_Init will fill in information about the variable name and structure in VarNameArray
+variable type and size are automatically determined when a value is set, either:
+	-with the set accessor of the AsString Property, which will make a guess at the type, based on the value
+	-with any of the set accessors of the CharString, Boolean, Integer, Number, or Null properties
+variable name is set automatically in FB_Init
+	-variable name is the JSON name
+	-JSON allows some object names that are not valid variable names in IEC61131, for example "type", 
+	"3h", etc.  Workaround is to put an underscore at the beginning of the variable name.  This will
+	match in JSON_TO_STRUCT, and STRUCT_TO_JSON will create a name without the leading underscore
+	
+JSON_TO_STRUCT
+convert a JSON string into a local structure of JSONVAR
+Long strings can take several seconds--for example, I have tested with a string of 20kB length, and the 
+parse time is about 4 seconds.  Ensuring that the local variable structure is designed to be as close as 
+possible to the expected order of variables in the JSON string will decrease parsing time, the search loop 
+always starts with the next local variable and loops around until a match is found.
+
+STRUCT_TO_JSON
+convert a local structure of JSONVAR to a JSON string
+.Format input will create indenting and new lines, useful for writing to a file
+
+GPL_JSON
+Parameter list that contains limits on size of strings, arrays, etc.  Most of these variables are simply
+to limit memory usage, so they can be increased or decreased to suit the local application and controller
+
+========================================================================================================*)
+
+LocalJSONObj.var1.Boolean:= TRUE;
+LocalJSONObj.var2.Number:= 34.8756;
+LocalJSONObj.var3.CharString:= 'teststring';
+LocalJSONObj.obj.var4.Number:= 22;
+LocalJSONObj.obj.var5.AsString:= 'FALSE';	//JSONVAR will guess at type, in this case, boolean
+LocalJSONObj.obj.var6.CharString:= 'qwer';
+LocalJSONObj.obj.var7[1].Number:= 123.234;
+LocalJSONObj.obj.var7[2].AsString:= '55.46';	//JSONVAR will guess at type, in this case, a number
+LocalJSONObj.obj.var7[3].Number:= 985;
+LocalJSONObj.arrayobj[1].Number:= 1;
+LocalJSONObj.arrayobj[2].Number:= 2;
+LocalJSONObj.arrayobj[3].Number:= 3;
+
+//create a JSON string from local object
+ComposeJSON(
+	JSONString:= ADR(JSONString), 
+	JSONStringSize:= SIZEOF(JSONString),
+	JSONVars:= ADR(LocalJSONObj),
+	NumberOfVars:= SIZEOF(LocalJSONObj) / SIZEOF(JSONVAR)
+);
+
+//fill another local object with values from the created JSON string
+ParseJSON(
+	Execute:= ComposeJSON.Done,
+	JSONString:= ADR(JSONString), 
+	JSONStringSize:= SIZEOF(JSONString),
+	JSONVars:= ADR(NewJSONObj),
+	NumberOfVars:= SIZEOF(NewJSONObj) / SIZEOF(JSONVAR)
+);
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

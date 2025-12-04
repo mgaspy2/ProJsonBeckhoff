@@ -1,0 +1,358 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="STRUCT_TO_JSON" Id="{508a98df-edb1-4262-bbd7-4fff49fd3b44}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK STRUCT_TO_JSON
+VAR_INPUT
+	Execute:			BOOL;		//rising edge triggers compose of JSON string
+	Abort:				BOOL;		//rising edge stops composing a JSON string
+	{attribute 'displaymode':='hex'}JSONString:		POINTER TO ARRAY[1..GPL_JSON.MAX_JSON_STRING] OF BYTE;	//pointer to JSON string
+	JSONStringSize:		UDINT;		//size of string
+	JSONVars:			POINTER TO ARRAY[1..GPL_JSON.MAX_VARS] OF JSONVAR;	//pointer to local structure made up of type JSONVAR
+	NumberOfVars:		UINT;		//number of variables in the local structure or array
+	VariableArraySize:	BOOL;		//don't write array values which are null, resulting in variable array sizes
+	Format:				BOOL;		//add white space and indenting to the resulting string
+END_VAR
+
+VAR_OUTPUT
+	Busy:				BOOL;		//busy composing a string
+	Done:				BOOL;		//successfully composed the whole string with no errors
+	Aborted:			BOOL;		//compose aborted by Abort input
+	Error:				BOOL;		//unexpected character detected, string not completely composed
+	ErrorPosition:		UDINT;		//index of local object at which composing stopped
+	ComposeTime:		TIME;		//time it took to compose the string
+END_VAR
+
+VAR
+	bufferposition:		UDINT;	//current position in the string
+	jsonvarindex:		UDINT;
+	compose:			BOOL;	
+	objectstr:			STRING(255);	//string created by current variable
+	names:				ARRAY[1..GPL_JSON.MAX_LEVELS] OF JSONVARNAME;	//helper variable for names array property
+	namesindex:			INT;
+	i:					UINT;
+	
+	Execute_TRIG:		R_TRIG;
+	Abort_TRIG:			R_TRIG;
+	thisloopstarttime:	TIME;		//time the current loop started
+	starttime:			TIME;		//time composing started
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(*=======================================================================================================
+STRUCT_TO_JSON()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Nov 2, 2018
+create a JSON string from a structure of JSONVAR types
+========================================================================================================*)
+
+thisloopstarttime:= TIME();	//store the time of the beginning of this loop
+
+Execute_TRIG(CLK:= Execute);
+Abort_TRIG(CLK:= Abort);
+
+IF Execute_TRIG.Q THEN
+//must see a rising edge on execute to start composing
+	starttime:= TIME();	//store the time of the beginning of execution
+	compose:= TRUE;
+	Busy:= TRUE;
+	Aborted:= FALSE;
+	Done:= FALSE;
+	Error:= FALSE;
+	ErrorPosition:= 0;
+	bufferposition:= 1;
+	jsonvarindex:= 1;	
+	FOR i:= 1 TO GPL_JSON.MAX_LEVELS DO
+	//clear names array
+		names[i].Name:= '';
+		names[i].ArrayIndex:= 0;
+	END_FOR
+	//clear previous string
+	SysMemSet(
+		pDest:= JSONString, 
+		udiValue:= 0, 
+		udiCount:= JSONStringSize
+	);
+END_IF
+
+IF Abort_TRIG.Q THEN
+	Busy:= FALSE;
+	Aborted:= TRUE;
+	compose:= FALSE;
+END_IF
+
+
+
+WHILE compose AND (jsonvarindex <= NumberOfVars) AND (bufferposition < JSONStringSize) DO 
+//loop through all local variables
+	objectstr:= '';	//clear previous object string	
+	names:= JSONVars^[jsonvarindex].Names;	//helper variable for name array property
+	
+	IF (jsonvarindex = 1) THEN
+		objectstr:= CONCAT(objectstr, '{');	//open JSON string with {
+		IF Format THEN
+			objectstr:= CONCAT(objectstr, GPL_JSON.NEWLINE);
+		END_IF
+	ELSE
+		IF NOT (VariableArraySize AND (names[1].ArrayIndex > 0) AND (JSONVars^[jsonvarindex].ValueType = JSONVALUETYPE.json_null)) THEN
+		//don't write the value if the current variable is an array, and the value is null
+			objectstr:= CONCAT(objectstr, ',');	//comma in between each value
+			IF Format AND (names[1].ArrayIndex <= 1) THEN
+			//new line after each comma, except in arrays
+				objectstr:= CONCAT(objectstr, GPL_JSON.NEWLINE);	
+			END_IF	
+		END_IF
+
+	END_IF
+
+	FOR namesindex:= JSONVars^[jsonvarindex].ParentVar-1 TO 1 BY -1 DO 
+	//start at the second highest variable level and count down
+	//open new objects or arrays, and write a single name:value pair at level 1
+		//======================open new objects or arrays, or create new name:value pairs======================
+		IF names[namesindex].NewArray AND (names[namesindex].ArrayIndex <= 1) THEN
+		//new array at this level
+			CreateName(Name:= names[namesindex].Name);
+			CreateArray();	
+		END_IF	
+
+		IF (jsonvarindex <> 1) AND (namesindex > 1) AND names[namesindex].NewObject THEN
+		//new object at this level, don't create objects at level 1
+			IF (names[namesindex].ArrayIndex = 0) THEN
+			//only create an object name if this is not part of an array
+				CreateName(Name:= names[namesindex].Name);
+			END_IF
+			CreateObject();	
+		END_IF
+		
+		IF (namesindex=1) THEN
+		//only write a value at level 1
+			IF (names[namesindex].ArrayIndex > 0) THEN
+			//array, create value only
+				IF NOT (VariableArraySize AND (names[1].ArrayIndex > 0) AND (JSONVars^[jsonvarindex].ValueType = JSONVALUETYPE.json_null)) THEN
+				//don't write the value if the current variable is an array, and the value is null
+					CreateValue(ValueType:= JSONVars^[jsonvarindex].ValueType, Value:= JSONVars^[jsonvarindex].AsString);					
+				END_IF
+			ELSE
+			//name:value pair
+				CreateName(Name:= names[namesindex].Name);
+				CreateValue(ValueType:= JSONVars^[jsonvarindex].ValueType, Value:= JSONVars^[jsonvarindex].AsString);
+			END_IF
+		END_IF
+	END_FOR
+	
+	FOR namesindex:= 1 TO JSONVars^[jsonvarindex].ParentVar-1 DO 
+	//start at the lowest level and count up
+	//close objects or arrays if this is the last value in this object or array
+		IF names[namesindex].EndObject THEN
+		//close object at this level, unless it's the last object in the
+			CloseObject();
+		END_IF
+
+		IF names[namesindex].EndArray THEN	
+		//close array at this level
+			CloseArray();	
+		END_IF	
+	END_FOR	
+	
+	//concatenate the temporary object string to the JSON string output
+	StrConcatA(
+		pstFrom:= ADR(objectstr), 
+		pstTo:= ADR(JSONString^[bufferposition]), 
+		iBufferSize:= UDINT_TO_INT(JSONStringSize)
+	);	
+	
+	bufferposition:= bufferposition + DINT_TO_UDINT(LEN(objectstr));
+
+	IF (jsonvarindex >= NumberOfVars) THEN
+	//end of vars, close string
+		compose:= FALSE;
+		Busy:= FALSE;
+		Done:= TRUE;		
+		ComposeTime:= TIME() - starttime;
+		//JSONString^[bufferposition]:= ASCII.CLOSE_BRACE;;	//close JSON object with }
+		JSONString^[bufferposition]:= ASCII.NULL;	//null character to end string
+	END_IF
+	
+	IF TIME() >= (thisloopstarttime + GPL_JSON.MAX_EXECUTION_TIME) THEN
+	//this function block won't take up more than GPL_JSON.MAX_EXECUTION_TIME on one scan
+	//very long strings could take too long to compose in one task cycle, and cause a watchdog exception
+		RETURN;
+	END_IF
+	
+	jsonvarindex:= jsonvarindex + 1;	
+END_WHILE
+]]></ST>
+    </Implementation>
+    <Method Name="CloseArray" Id="{7830e985-43a9-4b86-ad39-2c910eff0c37}">
+      <Declaration><![CDATA[METHOD CloseArray
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*=======================================================================================================
+CloseArray()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Oct 22, 2018
+close a JSON array
+========================================================================================================*)
+objectstr:= CONCAT(objectstr, ']');
+
+IF Format THEN
+	objectstr:= CONCAT(objectstr, GPL_JSON.NEWLINE);	
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="CloseObject" Id="{5ed39317-cb40-44ac-9912-10746f72396d}">
+      <Declaration><![CDATA[METHOD CloseObject
+VAR
+	indent:		INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*=======================================================================================================
+CloseObject()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Oct 22, 2018
+close a JSON object
+========================================================================================================*)
+IF Format THEN
+	FOR indent:= 1 TO JSONVars^[jsonvarindex].ParentVar-1 DO
+		objectstr:= CONCAT(objectstr, GPL_JSON.INDENT);	
+	END_FOR
+END_IF
+
+objectstr:= CONCAT(objectstr, '}');
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="CreateArray" Id="{cf74aadc-0d71-45cd-a4ce-6e5409318b24}">
+      <Declaration><![CDATA[METHOD CreateArray
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*=======================================================================================================
+CreateArray()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Oct 22, 2018
+create a new JSON array
+
+[ ------ ------------ value ---------------- ] 
+        /                               \
+	    \_______________ , _____________/
+		
+========================================================================================================*)
+objectstr:= CONCAT(objectstr, '[');	//opening [
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="CreateName" Id="{cf876181-d8bc-4e1c-8f5d-5d6d23ca693a}">
+      <Declaration><![CDATA[METHOD CreateName
+VAR_INPUT
+	Name:	STRING(GPL_JSON.MAX_NAME_SIZE);
+END_VAR
+VAR
+	indent:		INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*=======================================================================================================
+CreateName()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Oct 22, 2018
+create a JSON name string from a local variable of type JSONVAR
+========================================================================================================*)
+IF Format THEN
+	FOR indent:= 1 TO JSONVars^[jsonvarindex].ParentVar-1 DO
+		objectstr:= CONCAT(objectstr, GPL_JSON.INDENT);	
+	END_FOR
+END_IF
+
+objectstr:= CONCAT(objectstr, '"');	//opening quote
+objectstr:= CONCAT(objectstr, Name);//variable name
+objectstr:= CONCAT(objectstr, '":');	//closing quote and name:value separator
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="CreateObject" Id="{d8a2b5ad-5916-45a1-b718-7bd273ffd4d3}">
+      <Declaration><![CDATA[METHOD CreateObject
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*=======================================================================================================
+CreateObject()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Oct 22, 2018
+create a new JSON object
+
+{------ "name" ------ : ----- value --------- }
+        /                                 \
+	    \_______________ , _______________/
+
+========================================================================================================*)
+objectstr:= CONCAT(objectstr, '{');	//opening {
+
+IF Format THEN
+	objectstr:= CONCAT(objectstr, GPL_JSON.NEWLINE);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="CreateValue" Id="{14c2f210-dd52-4dd7-96c3-52170259d7d1}">
+      <Declaration><![CDATA[METHOD CreateValue
+VAR_INPUT
+	ValueType:		JSONVALUETYPE;
+	Value:			STRING(GPL_JSON.MAX_VALUE_SIZE);
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*=======================================================================================================
+CreateValue()
+Author: Tim Van Meppelen, Pro Electric Inc.
+timv@proelectric.com
+Date: Oct 22, 2018
+create a JSON value string from a local variable of type JSONVAR
+========================================================================================================*)
+CASE ValueType OF
+//append value to object string
+JSONVALUETYPE.json_number:
+	objectstr:= CONCAT(objectstr, Value);
+JSONVALUETYPE.json_integer:
+	objectstr:= CONCAT(objectstr, Value);	
+JSONVALUETYPE.json_boolean:
+	objectstr:= CONCAT(objectstr, Value);
+JSONVALUETYPE.json_string:
+	objectstr:= CONCAT(objectstr, '"');	//opening quote
+	objectstr:= CONCAT(objectstr, Value);
+	objectstr:= CONCAT(objectstr, '"');	//closing quote
+JSONVALUETYPE.json_null:
+	objectstr:= CONCAT(objectstr, 'null');
+END_CASE
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ErrorHandler" Id="{1c948530-ed26-4c2d-bebf-923c43728381}">
+      <Declaration><![CDATA[METHOD ErrorHandler
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*=======================================================================================================
+Error()
+Something went wrong, return the index of the variable where the problem was encountered
+========================================================================================================*)
+
+compose:= FALSE;
+Busy:= FALSE;
+Error:= TRUE;
+ErrorPosition:= jsonvarindex;	//return buffer position of unexpected character
+RETURN;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

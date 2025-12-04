@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <GVL Name="GPL_JSON" Id="{9cb63e56-62f5-4cd0-a7f6-84b16537f856}" ParameterList="True">
+    <Declaration><![CDATA[{attribute 'parameterlist' := ''}
+{attribute 'qualified_only' := ''}
+VAR_GLOBAL CONSTANT
+	///maximum number of nested objects or array dimensions
+	MAX_LEVELS: UINT := 10;
+	///max string length of JSON name
+	MAX_NAME_SIZE: UINT := 20;
+	///max value string in bytes (all values are this size in memory)
+	MAX_VALUE_SIZE: UINT := 50;
+	///maximum length of full variable name with path
+	MAX_VAR_NAME: UINT := 150;
+	///maximum number of variables in the local structure
+	MAX_VARS: UINT := 500;
+	///maximum time for a single scan of the JSON_TO_STRUCT function block
+	MAX_EXECUTION_TIME: TIME := TIME#50ms;
+	///maximum allowable size of JSON string
+	MAX_JSON_STRING: UINT := 20000;
+	///formatting string for new line
+	NEWLINE: STRING(2) := '$R$N';
+	///formatting string for indentation
+	INDENT: STRING(1) := '$T';
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>
