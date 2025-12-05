@@ -46,6 +46,9 @@ https://forge.codesys.com/lib/pro-json/home/Home/</Description>
     <Compile Include="Examples\EXAMPLEJSONSTRUCT_1.TcDUT">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="Examples\ExampleJSON_FB.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="Examples\ExampleJSON_PRG.TcPOU">
       <SubType>Code</SubType>
     </Compile>
@@ -71,9 +74,6 @@ https://forge.codesys.com/lib/pro-json/home/Home/</Description>
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="GPL_JSON.TcGVL">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="MAIN.TcPOU">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Notes.TcPOU">
@@ -113,7 +113,7 @@ https://forge.codesys.com/lib/pro-json/home/Home/</Description>
     </LibraryReference>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Untitled1.tmc">
+    <None Include="ProJsonBeckhoff.tmc">
       <SubType>Content</SubType>
     </None>
   </ItemGroup>

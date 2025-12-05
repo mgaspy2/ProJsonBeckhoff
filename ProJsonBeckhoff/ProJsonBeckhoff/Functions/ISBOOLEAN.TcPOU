@@ -18,7 +18,7 @@ Date: Oct 2, 2018
 check if a string would convert to a valid boolean variable
 ========================================================================================================*)
 TempVar:= In^;
-StrToUpperA(pString:= ADR(TempVar));
+F_ToUCase(TempVar);
 
 ISBOOLEAN:= (TempVar = 'TRUE') OR (TempVar = 'FALSE');]]></ST>
     </Implementation>

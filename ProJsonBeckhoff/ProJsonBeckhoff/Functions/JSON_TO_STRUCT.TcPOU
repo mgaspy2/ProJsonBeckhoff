@@ -115,7 +115,7 @@ WHILE parse DO
 		Value();
 		
 	ASCII.COMMA:	// , move to next object
-		ASCII.Comma();
+		Comma();
 	
 	ASCII.SOH..ASCII.SPACE:	// skip all control characters, including spaces
 		bufferposition:= bufferposition + 1;

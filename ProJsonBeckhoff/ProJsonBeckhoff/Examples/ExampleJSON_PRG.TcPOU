@@ -8,6 +8,8 @@ VAR
 	JSONString: STRING(1000);
 	NewJSONObj: EXAMPLEJSONSTRUCT;
 	ParseJSON: JSON_TO_STRUCT;
+	
+	ExampleJSON : ExampleJSON_FB;
 END_VAR
 ]]></Declaration>
     <Implementation>
@@ -85,6 +87,8 @@ ParseJSON(
 	JSONVars:= ADR(NewJSONObj),
 	NumberOfVars:= SIZEOF(NewJSONObj) / SIZEOF(JSONVAR)
 );
+
+ExampleJSON();
 ]]></ST>
     </Implementation>
   </POU>

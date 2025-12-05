@@ -2,15 +2,18 @@
 <TcSmProject xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.beckhoff.com/schemas/2012/07/TcSmProject" TcSmVersion="1.0" TcVersion="3.1.4026.19">
 	<Project ProjectGUID="{4B227B1D-67DB-4F73-BAF3-FBB03E13896D}" Target64Bit="true" ShowHideConfigurations="#x3c7">
 		<System>
+			<Settings MaxCpus="8" NonWinCpus="1">
+				<Cpu CpuId="7"/>
+			</Settings>
 			<Tasks>
-				<Task Id="3" Priority="20" CycleTime="100000" AmsPort="350" AdtTasks="true">
+				<Task Id="3" Priority="20" CycleTime="1000000" AmsPort="350" AdtTasks="true">
 					<Name>PlcTask</Name>
 				</Task>
 			</Tasks>
 		</System>
 		<Plc>
 			<Project GUID="{83538DCC-31EE-4556-BC51-4E404D2848D1}" Name="ProJsonBeckhoff" PrjFilePath="ProJsonBeckhoff\ProJsonBeckhoff.plcproj" TmcFilePath="ProJsonBeckhoff\ProJsonBeckhoff.tmc" ReloadTmc="true" AmsPort="851" FileArchiveSettings="#x000e" SymbolicMapping="true">
-				<Instance Id="#x08502000" TcSmClass="TComPlcObjDef" KeepUnrestoredLinks="2" TmcHash="{79DAADA9-C5DA-E597-E716-2091841060C9}">
+				<Instance Id="#x08502000" TcSmClass="TComPlcObjDef" KeepUnrestoredLinks="2" TmcHash="{A9B730F4-37D6-0B32-36A3-86F529B9A73F}" TmcPath="ProJsonBeckhoff\ProJsonBeckhoff.tmc">
 					<Name>ProJsonBeckhoff Instance</Name>
 					<CLSID ClassFactory="TcPlc30">{08500001-0000-0000-F000-000000000064}</CLSID>
 					<Contexts>
@@ -21,7 +24,7 @@
 								<OTCID>#x02010030</OTCID>
 							</ManualConfig>
 							<Priority>20</Priority>
-							<CycleTime>10000000</CycleTime>
+							<CycleTime>100000000</CycleTime>
 						</Context>
 					</Contexts>
 					<TaskPouOids>

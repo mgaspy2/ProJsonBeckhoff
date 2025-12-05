@@ -128,7 +128,7 @@ CASE _ValueType OF
 JSONVALUETYPE.json_null:
 	THIS^.Null:= 'null';
 JSONVALUETYPE.json_boolean:
-	StrToUpperA(pString:= ADR(AsString));
+	F_ToUCase(AsString);
 	IF (AsString = 'TRUE') THEN
 		TempBool:= TRUE;
 	ELSE
@@ -299,25 +299,21 @@ StringIndex:= LEN(_VarNameFull);
 VarNameEnd:= StringIndex;
 VarNameIndex:= 1;
 
-
-
-
 //TO DO:  use SPLIT function to create an array first, then loop through the array
-
 WHILE (StringIndex > 0) DO
 	IF (NameStringPtr^[StringIndex] = ASCII.DOT) THEN
-	//found a "." character
+		//found a "." character
 		VarNameBegin:= StringIndex + 1;
 		
 		//clear array string  TO DO:  IS THIS NECESSARY?
-		Sysmem.SysMemSet(
+		SysMemSet(
 			pDest:= ADR(_VarNameArray[VarNameIndex]), 
 			udiValue:= 0, 
 			udiCount:= GPL_JSON.MAX_NAME_SIZE
 		);
-	
+
 		//copy string between VarNameBegin and VarNameEnd
-		SysMem.SysMemCpy(
+		SysMemCpy(
 			pDest:= ADR(_VarNameArray[VarNameIndex]), 
 			pSrc:= ADR(NameStringPtr^[VarNameBegin]), 
 			udiCount:= INT_TO_UDINT((VarNameEnd - VarNameBegin)+1)
@@ -325,7 +321,7 @@ WHILE (StringIndex > 0) DO
 		
 		//remove leading _ from the name, if present
 		IF FIND(STR1:= _VarNameArray[VarNameIndex].Name, STR2:= '_') = 1 THEN
-			_VarNameArray[VarNameIndex].Name:= RIGHT(STR:= _VarNameArray[VarNameIndex].Name, SIZE:= LEN(_VarNameArray[VarNameIndex].Name) - 1);
+			_VarNameArray[VarNameIndex].Name:= DELETE(STR:= _VarNameArray[VarNameIndex].Name, LEN:= 1, POS:= 1);
 		END_IF
 		
 		//check if this is an array, if yes then remove the array index from the variable name
@@ -337,27 +333,34 @@ WHILE (StringIndex > 0) DO
 				LEN:= endarraystr-startarraystr-1, 
 				POS:= startarraystr+1
 			));
-			_VarNameArray[VarNameIndex].Name:= Standard.DELETE(
+			_VarNameArray[VarNameIndex].Name:= DELETE(
 				STR:= _VarNameArray[VarNameIndex].Name, 
 				LEN:= endarraystr-startarraystr+1, 
 				POS:= startarraystr
 			);
 		END_IF
 		
-		IF (_VarNameArray[VarNameIndex].Name = 'Application') THEN
-		//was this the application level?	
-		//highest variable name is always two less than the Application index	
-			_ParentVar:= VarNameIndex - 2;
-			EXIT;
-		END_IF
+        // ORIGINAL CODE LOOKED FOR 'Application' HERE.
+        // Removed to allow the loop to parse the full path first.
 	
 		VarNameIndex:= VarNameIndex + 1;
-		VarNameEnd:= VarNameBegin - 2;	//end of the next variable name is known, store for next loop			
+		VarNameEnd:= VarNameBegin - 2;	//end of the next variable name is known, store for next loop
 		StringIndex:= VarNameBegin - 2;
 	ELSE
 		StringIndex:= StringIndex - 1;
 	END_IF
 END_WHILE
+
+// Top 2 levels of the path are Task/System and Program, which should be ignored.
+// e.g. PlcTask.ExampleJSON_PRG.LocalJSONObj.var1
+// _VarNameArray: [1]=var1, [2]=LocalJSONObj, [3]=ExampleJSON_PRG, [4]=PlcTask
+// LocalJSONObj (index 2) needs to be the root.
+// VarNameIndex is 4 here. 4 - 2 = 2.
+IF _ParentVar = 0 THEN
+    _ParentVar := VarNameIndex - 2;
+    // Safety check: ParentVar must be at least 1
+    IF _ParentVar < 1 THEN _ParentVar := 1; END_IF
+END_IF
 
 //====================JSON OBJECT CHARACTERISTICS====================
 //figure out whether this variable is the first value of a new JSON object, or if the previous variable is the last value of a JSON object

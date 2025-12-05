@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="ExampleJSON_FB" Id="{3c79246d-184d-4582-be90-55effe01baf0}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK ExampleJSON_FB
+VAR
+	LocalJSONObj: EXAMPLEJSONSTRUCT;
+	ComposeJSON: STRUCT_TO_JSON;
+	JSONString: STRING(1000);
+	NewJSONObj: EXAMPLEJSONSTRUCT;
+	ParseJSON: JSON_TO_STRUCT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(*=======================================================================================================
+ExampleJSON_FB()
+example function block testing nested objects
+
+========================================================================================================*)
+
+LocalJSONObj.var1.Boolean:= TRUE;
+LocalJSONObj.var2.Number:= 34.8756;
+LocalJSONObj.var3.CharString:= 'teststring';
+LocalJSONObj.obj.var4.Number:= 22;
+LocalJSONObj.obj.var5.AsString:= 'FALSE';	//JSONVAR will guess at type, in this case, boolean
+LocalJSONObj.obj.var6.CharString:= 'qwer';
+LocalJSONObj.obj.var7[1].Number:= 123.234;
+LocalJSONObj.obj.var7[2].AsString:= '55.46';	//JSONVAR will guess at type, in this case, a number
+LocalJSONObj.obj.var7[3].Number:= 985;
+LocalJSONObj.arrayobj[1].Number:= 1;
+LocalJSONObj.arrayobj[2].Number:= 2;
+LocalJSONObj.arrayobj[3].Number:= 3;
+
+//create a JSON string from local object
+ComposeJSON(
+	JSONString:= ADR(JSONString), 
+	JSONStringSize:= SIZEOF(JSONString),
+	JSONVars:= ADR(LocalJSONObj),
+	NumberOfVars:= SIZEOF(LocalJSONObj) / SIZEOF(JSONVAR)
+);
+
+//fill another local object with values from the created JSON string
+ParseJSON(
+	Execute:= ComposeJSON.Done,
+	JSONString:= ADR(JSONString), 
+	JSONStringSize:= SIZEOF(JSONString),
+	JSONVars:= ADR(NewJSONObj),
+	NumberOfVars:= SIZEOF(NewJSONObj) / SIZEOF(JSONVAR)
+);
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

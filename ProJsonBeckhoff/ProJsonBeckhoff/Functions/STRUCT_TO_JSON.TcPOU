@@ -155,11 +155,11 @@ WHILE compose AND (jsonvarindex <= NumberOfVars) AND (bufferposition < JSONStrin
 	END_FOR	
 	
 	//concatenate the temporary object string to the JSON string output
-	StrConcatA(
-		pstFrom:= ADR(objectstr), 
-		pstTo:= ADR(JSONString^[bufferposition]), 
-		iBufferSize:= UDINT_TO_INT(JSONStringSize)
-	);	
+	SysMemCpy(
+		pDest := ADR(JSONString^[bufferposition]),
+		pSrc := ADR(objectstr),
+		udiCount := INT_TO_UDINT(LEN(objectstr))
+	);
 	
 	bufferposition:= bufferposition + DINT_TO_UDINT(LEN(objectstr));
 
